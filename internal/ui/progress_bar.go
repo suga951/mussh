@@ -2,39 +2,38 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
 
-func ProgressBar(current, total time.Duration, width int, pulseFrame int) string {
-	progress := float64(current) / float64(total)
-	filled := int(progress * float64(width))
+var gradientFrames = []string{"█", "▓", "▒", "░"} // from solid to empty
 
-	if filled >= width {
-		filled = width - 1
+func ProgressBar(current, total time.Duration, width int, pulseFrame int) string {
+	if total <= 0 {
+		total = 1
 	}
 
-	full := "█"
-	pulseChars := []string{"▒", "▓"}
-	empty := "░"
+	progress := float64(current) / float64(total)
+	if progress > 1 {
+		progress = 1
+	}
 
-	pulse := pulseChars[pulseFrame%len(pulseChars)]
+	filled := int(progress * float64(width))
+	filled = int(math.Max(0, math.Min(float64(filled), float64(width))))
 
-	bar := fmt.Sprintf("[%s%s%s]",
-		strings.Repeat(full, filled),
-		pulse,
-		strings.Repeat(empty, width-filled-1),
-	)
+	bar := ""
+	for i := 0; i < filled; i++ {
+		if i >= filled-3 {
+			idx := (i + pulseFrame) % len(gradientFrames)
+			bar += gradientFrames[idx]
+		} else {
+			bar += gradientFrames[0]
+		}
+	}
 
-	return fmt.Sprintf("%s  %s / %s",
-		bar,
-		formatTime(current),
-		formatTime(total),
-	)
-}
+	emptyCount := int(math.Max(0, float64(width-filled)))
+	bar += strings.Repeat("─", emptyCount)
 
-func formatTime(d time.Duration) string {
-	min := int(d.Minutes())
-	sec := int(d.Seconds()) % 60
-	return fmt.Sprintf("%02d:%02d", min, sec)
+	return fmt.Sprintf("[%s]  %s / %s", bar, formatDuration(current), formatDuration(total))
 }
