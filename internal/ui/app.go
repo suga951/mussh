@@ -4,19 +4,25 @@ import (
 	"fmt"
 	"mussh/internal/player"
 	"mussh/internal/ytmusic"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+type tickMsg struct{}
+
 type Model struct {
-	song      string
-	artist    string
-	duration  string
-	paused    bool
-	player    player.Player
-	searching bool
-	textInput textinput.Model
+	song       string
+	artist     string
+	current    time.Duration
+	total      time.Duration
+	pulseFrame int
+	ticker     *time.Ticker
+	paused     bool
+	player     player.Player
+	searching  bool
+	textInput  textinput.Model
 }
 
 func New() *Model {
@@ -27,9 +33,10 @@ func New() *Model {
 	ti.Width = 40
 
 	return &Model{
-		song:      "Through Struggle",
-		artist:    "As I Lay Dying",
-		duration:  "0:23 / 3:23",
+		song:      "",
+		artist:    "",
+		current:   0,
+		total:     0,
 		paused:    false,
 		player:    player.Player{},
 		searching: false,
@@ -37,9 +44,29 @@ func New() *Model {
 	}
 }
 
-func (m *Model) Init() tea.Cmd { return nil }
+func (m *Model) Init() tea.Cmd {
+	m.ticker = time.NewTicker(100 * time.Millisecond)
+	return tick()
+}
+
+func tick() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
+		return t
+	})
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	case time.Time:
+		if !m.paused {
+			m.current += 100 * time.Millisecond
+			if m.current > m.total {
+				m.current = m.total
+			}
+		}
+		m.pulseFrame = (m.pulseFrame + 1) % 6
+		return m, tick()
 
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -77,8 +104,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case *ytmusic.Song:
 		m.song = msg.Title
 		m.artist = msg.Artist
-		m.duration = msg.Duration
-
+		dur, err := ParseDuration(msg.Duration)
+		if err != nil {
+			fmt.Println("error parsing duration:", err)
+			dur = 0
+		}
+		m.total = dur
+		m.current = 0
+		m.pulseFrame = 0
 		go m.player.Play(msg.URL)
 	}
 
@@ -105,13 +138,15 @@ func (m *Model) View() string {
 		status = "Paused"
 	}
 
+	bar := ProgressBar(m.current, m.total, 30, m.pulseFrame)
+
 	return fmt.Sprintf(
-		"\n %s  %s\n %s\n\n [%s]  %s\n\n %s\n",
+		"\n %s  %s\n %s\n\n %s\n\n %s\n",
 		status,
 		TitleStyle.Render(m.song),
 		ArtistStyle.Render(m.artist),
-		BarStyle.Render("████──────"),
-		TimeStyle.Render(m.duration),
+		bar,
 		HelpStyle.Render("[Space]Play/Pause [S]Search [Q]Quit"),
 	)
+
 }
